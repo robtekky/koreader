@@ -2,7 +2,6 @@ describe("CalibreWireless collections", function()
     local CalibreWireless
     local ReadCollection
     local original_readcollection
-    local original_filemanagerutil
     local original_lfs
     local original_package_path
     local original_extensions
@@ -21,7 +20,6 @@ describe("CalibreWireless collections", function()
         original_search = package.loaded["search"]
 
         original_readcollection = require("readcollection")
-        original_filemanagerutil = require("apps/filemanager/filemanagerutil")
         original_lfs = require("libs/libkoreader-lfs")
     end)
 
@@ -52,6 +50,13 @@ describe("CalibreWireless collections", function()
             }
         end
 
+        function readcollection_mock:isFileInCollection(file, collection_name)
+            return self.coll[collection_name]
+                and self.coll[collection_name][file]
+                and true
+                or false
+        end
+
         function readcollection_mock:removeItem(file, collection_name)
             if self.coll[collection_name]
                 and self.coll[collection_name][file]
@@ -63,12 +68,6 @@ describe("CalibreWireless collections", function()
 
         function readcollection_mock:write(updated_collections)
             self.written = updated_collections
-        end
-
-        local filemanagerutil_mock = {}
-
-        function filemanagerutil_mock.getHomeFolder()
-            return HOME
         end
 
         local lfs_mock = {
@@ -92,10 +91,6 @@ describe("CalibreWireless collections", function()
         package.replace(
             "readcollection",
             readcollection_mock
-        )
-        package.replace(
-            "apps/filemanager/filemanagerutil",
-            filemanagerutil_mock
         )
         package.replace(
             "libs/libkoreader-lfs",
@@ -125,14 +120,9 @@ describe("CalibreWireless collections", function()
             original_readcollection
         )
         package.replace(
-            "apps/filemanager/filemanagerutil",
-            original_filemanagerutil
-        )
-        package.replace(
             "libs/libkoreader-lfs",
             original_lfs
         )
-
     end)
 
     local function new_wireless()
@@ -177,32 +167,10 @@ describe("CalibreWireless collections", function()
 
             assert.is_table(collections.fiction)
             assert.equals(1, #collections.fiction)
-            assert.equals("books/one.epub", collections.fiction[1])
+            assert.equals(HOME .. "/books/one.epub", collections.fiction[1])
 
             assert.is_table(collections.empty)
             assert.equals(0, #collections.empty)
-        end)
-
-        it("ignores collection files outside the KOReader home", function()
-            ReadCollection.coll = {
-                mixed = {
-                    [HOME .. "/books/one.epub"] = {
-                        file = HOME .. "/books/one.epub",
-                    },
-                    ["/outside/book.epub"] = {
-                        file = "/outside/book.epub",
-                    },
-                },
-            }
-
-            local wireless = new_wireless()
-
-            wireless:getCollections()
-
-            local files = wireless.responses[1].data.collections.mixed
-
-            assert.equals(1, #files)
-            assert.equals("books/one.epub", files[1])
         end)
     end)
 
@@ -274,7 +242,7 @@ describe("CalibreWireless collections", function()
                 add_collections = {"fiction"},
                 add = {
                     fiction = {
-                        "books/one.epub",
+                        HOME .. "/books/one.epub",
                     },
                 },
             }
@@ -355,7 +323,7 @@ describe("CalibreWireless collections", function()
             wireless:updateCollections{
                 add = {
                     fiction = {
-                        "books/one.epub",
+                        HOME .. "/books/one.epub",
                     },
                 },
             }
@@ -391,7 +359,7 @@ describe("CalibreWireless collections", function()
             wireless:updateCollections{
                 add = {
                     fiction = {
-                        "books/one.epub",
+                        HOME .. "/books/one.epub",
                     },
                 },
             }
@@ -427,7 +395,7 @@ describe("CalibreWireless collections", function()
             wireless:updateCollections{
                 remove = {
                     fiction = {
-                        "books/one.epub",
+                        HOME .. "/books/one.epub",
                     },
                 },
             }
@@ -464,7 +432,7 @@ describe("CalibreWireless collections", function()
             wireless:updateCollections{
                 add = {
                     fiction = {
-                        "books/one.epub",
+                        HOME .. "/books/one.epub",
                     },
                 },
             }
@@ -527,8 +495,8 @@ describe("CalibreWireless collections", function()
             wireless:updateCollections{
                 add = {
                     fiction = {
-                        "books/missing.epub",
-                        "../outside.epub",
+                        HOME .. "/books/missing.epub",
+                        HOME .. "/outside.epub",
                         "/absolute/path.epub",
                     },
                 },

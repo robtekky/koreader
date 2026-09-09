@@ -13,6 +13,7 @@ local FFIUtil = require("ffi/util")
 local InputDialog = require("ui/widget/inputdialog")
 local InfoMessage = require("ui/widget/infomessage")
 local NetworkMgr = require("ui/network/manager")
+local ReadCollection = require("readcollection")
 local Trapper = require("ui/trapper")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -23,8 +24,6 @@ local sha = require("ffi/sha2")
 local util = require("util")
 local _ = require("gettext")
 local T = FFIUtil.template
-local ReadCollection = require("readcollection")
-local filemanagerutil = require("apps/filemanager/filemanagerutil")
 
 require("ffi/zeromq_h")
 
@@ -809,59 +808,6 @@ function CalibreWireless:isCalibreAtLeast(x, y, z)
     return semanticVersion(v[1], v[2], v[3]) >= semanticVersion(x, y, z)
 end
 
-local function getCollectionHome()
-    return filemanagerutil.getHomeFolder():gsub("/+$", "")
-end
-
-local function toCollectionLpath(file)
-    if type(file) ~= "string" then
-        return nil
-    end
-
-    local home = getCollectionHome()
-
-    local prefix = home .. "/"
-
-    if file:sub(1, #prefix) == prefix then
-        return file:sub(#prefix + 1)
-    end
-
-    logger.warn(
-        "CalibreWireless: collection file outside KOReader home:",
-        file
-    )
-
-    return nil
-end
-
-local function fromCollectionLpath(lpath)
-    if type(lpath) ~= "string" or lpath == "" then
-        logger.warn(
-            "CalibreWireless: invalid collection lpath:",
-            lpath
-        )
-        return nil
-    end
-
-    if lpath:sub(1, 1) == "/" then
-        logger.warn(
-            "CalibreWireless: absolute collection lpath rejected:",
-            lpath
-        )
-        return nil
-    end
-
-    if lpath:match("(^|/)%.%.(/|$)") then
-        logger.warn(
-            "CalibreWireless: collection lpath traversal rejected:",
-            lpath
-        )
-        return nil
-    end
-
-    return getCollectionHome() .. "/" .. lpath
-end
-
 function CalibreWireless:getCollections(arg)
     local collections = {}
 
@@ -869,11 +815,7 @@ function CalibreWireless:getCollections(arg)
         local files = rapidjson.array()
 
         for file in pairs(collection) do
-            local lpath = toCollectionLpath(file)
-
-            if lpath then
-                table.insert(files, lpath)
-            end
+            table.insert(files, file)
         end
 
         collections[collection_name] = files
@@ -920,24 +862,18 @@ function CalibreWireless:updateCollections(arg)
 
             if coll then
                 for _, file in ipairs(files) do
-                    local physical_file = fromCollectionLpath(file)
-
-                    if physical_file
-                        and lfs.attributes(physical_file, "mode") == "file"
-                        and not coll[physical_file]
+                    if lfs.attributes(file, "mode") == "file"
+                        and not ReadCollection:isFileInCollection(file, coll_name)
                     then
                         ReadCollection:addItem(
-                            physical_file,
+                            file,
                             coll_name
                         )
                         updated_collections[coll_name] = true
                     end
                 end
             else
-                logger.warn(
-                    "CalibreWireless: collection missing for add:",
-                    coll_name
-                )
+                logger.warn("CalibreWireless: collection missing for add:", coll_name)
             end
         end
     end
@@ -949,11 +885,9 @@ function CalibreWireless:updateCollections(arg)
 
             if coll then
                 for _, file in ipairs(files) do
-                    local physical_file = fromCollectionLpath(file)
-
-                    if physical_file and coll[physical_file] then
+                    if ReadCollection:isFileInCollection(file, coll_name) then
                         ReadCollection:removeItem(
-                            physical_file,
+                            file,
                             coll_name,
                             true
                         )
@@ -961,10 +895,7 @@ function CalibreWireless:updateCollections(arg)
                     end
                 end
             else
-                logger.warn(
-                    "CalibreWireless: collection missing for remove:",
-                    coll_name
-                )
+                logger.warn("CalibreWireless: collection missing for remove:", coll_name)
             end
         end
     end
