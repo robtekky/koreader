@@ -23,6 +23,8 @@ local sha = require("ffi/sha2")
 local util = require("util")
 local _ = require("gettext")
 local T = FFIUtil.template
+local ReadCollection = require("readcollection")
+local filemanagerutil = require("apps/filemanager/filemanagerutil")
 
 require("ffi/zeromq_h")
 
@@ -52,6 +54,8 @@ local OPCODES = {
     CALIBRE_BUSY              = 18,
     SET_LIBRARY_INFO          = 19,
     ERROR                     = 20,
+    GET_COLLECTIONS           = 21,
+    UPDATE_COLLECTIONS        = 22,
 }
 
 -- Mark some strings for translation.
@@ -440,6 +444,10 @@ function CalibreWireless:onReceiveJSON(data)
                 self:sendToCalibre(arg)
             elseif opcode == OPCODES.DISPLAY_MESSAGE then
                 self:serverFeedback(arg)
+            elseif opcode == OPCODES.GET_COLLECTIONS then
+                self:getCollections(arg)
+            elseif opcode == OPCODES.UPDATE_COLLECTIONS then
+                self:updateCollections(arg)
             elseif opcode == OPCODES.NOOP then
                 self:noop(arg)
             end
@@ -799,6 +807,173 @@ function CalibreWireless:isCalibreAtLeast(x, y, z)
         return ((a * 100000) + (b * 1000)) + c
     end
     return semanticVersion(v[1], v[2], v[3]) >= semanticVersion(x, y, z)
+end
+
+local function getCollectionHome()
+    return filemanagerutil.getHomeFolder():gsub("/+$", "")
+end
+
+local function toCollectionLpath(file)
+    if type(file) ~= "string" then
+        return nil
+    end
+
+    local home = getCollectionHome()
+
+    local prefix = home .. "/"
+
+    if file:sub(1, #prefix) == prefix then
+        return file:sub(#prefix + 1)
+    end
+
+    logger.warn(
+        "CalibreWireless: collection file outside KOReader home:",
+        file
+    )
+
+    return nil
+end
+
+local function fromCollectionLpath(lpath)
+    if type(lpath) ~= "string" or lpath == "" then
+        logger.warn(
+            "CalibreWireless: invalid collection lpath:",
+            lpath
+        )
+        return nil
+    end
+
+    if lpath:sub(1, 1) == "/" then
+        logger.warn(
+            "CalibreWireless: absolute collection lpath rejected:",
+            lpath
+        )
+        return nil
+    end
+
+    if lpath:match("(^|/)%.%.(/|$)") then
+        logger.warn(
+            "CalibreWireless: collection lpath traversal rejected:",
+            lpath
+        )
+        return nil
+    end
+
+    return getCollectionHome() .. "/" .. lpath
+end
+
+function CalibreWireless:getCollections(arg)
+    local collections = {}
+
+    for collection_name, collection in pairs(ReadCollection.coll) do
+        local files = rapidjson.array()
+
+        for file in pairs(collection) do
+            local lpath = toCollectionLpath(file)
+
+            if lpath then
+                table.insert(files, lpath)
+            end
+        end
+
+        collections[collection_name] = files
+    end
+
+    self:sendJsonData("OK", {
+        collections = collections,
+    })
+end
+
+function CalibreWireless:updateCollections(arg)
+    if not arg or type(arg) ~= "table" then
+        logger.warn("CalibreWireless: invalid UPDATE_COLLECTIONS payload")
+        return
+    end
+
+    local updated_collections = {}
+
+    -- Remove collections first so that membership changes cannot recreate
+    -- a collection which Calibre explicitly wants removed.
+    if arg.remove_collections then
+        for _, coll_name in ipairs(arg.remove_collections) do
+            if ReadCollection.coll[coll_name] then
+                ReadCollection:removeCollection(coll_name)
+            end
+            updated_collections[coll_name] = true
+        end
+    end
+
+    -- Explicit collection additions are needed for empty collections.
+    if arg.add_collections then
+        for _, coll_name in ipairs(arg.add_collections) do
+            if not ReadCollection.coll[coll_name] then
+                ReadCollection:addCollection(coll_name)
+            end
+            updated_collections[coll_name] = true
+        end
+    end
+
+    -- Add individual book memberships.
+    if arg.add then
+        for coll_name, files in pairs(arg.add) do
+            local coll = ReadCollection.coll[coll_name]
+
+            if coll then
+                for _, file in ipairs(files) do
+                    local physical_file = fromCollectionLpath(file)
+
+                    if physical_file
+                        and lfs.attributes(physical_file, "mode") == "file"
+                        and not coll[physical_file]
+                    then
+                        ReadCollection:addItem(
+                            physical_file,
+                            coll_name
+                        )
+                        updated_collections[coll_name] = true
+                    end
+                end
+            else
+                logger.warn(
+                    "CalibreWireless: collection missing for add:",
+                    coll_name
+                )
+            end
+        end
+    end
+
+    -- Remove individual book memberships.
+    if arg.remove then
+        for coll_name, files in pairs(arg.remove) do
+            local coll = ReadCollection.coll[coll_name]
+
+            if coll then
+                for _, file in ipairs(files) do
+                    local physical_file = fromCollectionLpath(file)
+
+                    if physical_file and coll[physical_file] then
+                        ReadCollection:removeItem(
+                            physical_file,
+                            coll_name,
+                            true
+                        )
+                        updated_collections[coll_name] = true
+                    end
+                end
+            else
+                logger.warn(
+                    "CalibreWireless: collection missing for remove:",
+                    coll_name
+                )
+            end
+        end
+    end
+
+    if next(updated_collections) then
+        ReadCollection:write(updated_collections)
+    end
+
+    self:sendJsonData("OK", {})
 end
 
 return CalibreWireless
