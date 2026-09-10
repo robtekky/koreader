@@ -810,20 +810,14 @@ end
 
 function CalibreWireless:getCollections(arg)
     local collections = {}
-
     for collection_name, collection in pairs(ReadCollection.coll) do
         local files = rapidjson.array()
-
         for file in pairs(collection) do
             table.insert(files, file)
         end
-
         collections[collection_name] = files
     end
-
-    self:sendJsonData("OK", {
-        collections = collections,
-    })
+    self:sendJsonData("OK", {collections = collections})
 end
 
 function CalibreWireless:updateCollections(arg)
@@ -859,16 +853,12 @@ function CalibreWireless:updateCollections(arg)
     if arg.add then
         for coll_name, files in pairs(arg.add) do
             local coll = ReadCollection.coll[coll_name]
-
             if coll then
                 for _, file in ipairs(files) do
                     if lfs.attributes(file, "mode") == "file"
                         and not ReadCollection:isFileInCollection(file, coll_name)
                     then
-                        ReadCollection:addItem(
-                            file,
-                            coll_name
-                        )
+                        ReadCollection:addItem(file, coll_name)
                         updated_collections[coll_name] = true
                     end
                 end
@@ -882,15 +872,10 @@ function CalibreWireless:updateCollections(arg)
     if arg.remove then
         for coll_name, files in pairs(arg.remove) do
             local coll = ReadCollection.coll[coll_name]
-
             if coll then
                 for _, file in ipairs(files) do
                     if ReadCollection:isFileInCollection(file, coll_name) then
-                        ReadCollection:removeItem(
-                            file,
-                            coll_name,
-                            true
-                        )
+                        ReadCollection:removeItem(file, coll_name, true)
                         updated_collections[coll_name] = true
                     end
                 end
