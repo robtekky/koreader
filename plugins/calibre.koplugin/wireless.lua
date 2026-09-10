@@ -834,8 +834,8 @@ function CalibreWireless:updateCollections(arg)
         for _, coll_name in ipairs(arg.remove_collections) do
             if ReadCollection.coll[coll_name] then
                 ReadCollection:removeCollection(coll_name)
+                updated_collections[coll_name] = true
             end
-            updated_collections[coll_name] = true
         end
     end
 
@@ -844,8 +844,8 @@ function CalibreWireless:updateCollections(arg)
         for _, coll_name in ipairs(arg.add_collections) do
             if not ReadCollection.coll[coll_name] then
                 ReadCollection:addCollection(coll_name)
+                updated_collections[coll_name] = true
             end
-            updated_collections[coll_name] = true
         end
     end
 
