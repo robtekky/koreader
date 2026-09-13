@@ -874,8 +874,7 @@ function CalibreWireless:updateCollections(arg)
             local coll = ReadCollection.coll[coll_name]
             if coll then
                 for _, file in ipairs(files) do
-                    if ReadCollection:isFileInCollection(file, coll_name) then
-                        ReadCollection:removeItem(file, coll_name, true)
+                    if ReadCollection:removeItem(file, coll_name, true) then
                         updated_collections[coll_name] = true
                     end
                 end
